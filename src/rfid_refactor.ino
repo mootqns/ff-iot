@@ -14,6 +14,12 @@ MFRC522DriverSPI driver{ss_pin}; // Create SPI driver
 MFRC522 mfrc522{driver};         // Create MFRC522 instance
 
 String curUid = "";
+String sessionStartTime;
+
+bool checkValidRfid(String rfid){
+  //api call checkRfid(rfid)
+  // parse and return bool
+}
 
 void setup() {
   Serial.begin(115200);  // Initialize serial communication
@@ -57,7 +63,7 @@ void loop() {
 	}
 
     struct tm timeInfo;
-    getLocalTime(&timeinfo)
+    time = getLocalTime(&timeinfo)
     Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
 
   // Save the UID in a String variable
@@ -68,9 +74,33 @@ void loop() {
     }
     uidString += String(mfrc522.uid.uidByte[i], HEX);
   }
+  if(!checkValidRfid(uidString)){
+    return;
+  }
+
+  // if uid is blank 
+    //start session
+  // if uid is different 
+    //occupied
+  // if uid == uid and sessionTime > minSession time
+    //log session
+    //uid = blank
+  
+  if (curUid = ""){
+    curUid = uidString
+    sessionStartTime = time;
+  }
+  else if (curUid != uidString){
+    //error "occupied";
+  }
+  else if (curUid == uidString && time - sessionStartTime >= minSessionTime){
+    //api call log session (rfid, sessionStartTime, sessionEndTime)
+    curUid = "";
+  }
   if (curUid != uidString){
     Serial.println(uidString);
     curUid = uidString;
   }
   
+
 }
