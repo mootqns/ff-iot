@@ -1,4 +1,5 @@
 #include <WiFi.h>
+#include <HTTPClient.h>
 #include <MFRC522v2.h>
 #include <MFRC522DriverSPI.h>
 #include <MFRC522DriverPinSimple.h>
@@ -9,98 +10,135 @@ const char* ssid = "TMOBILE-43AA";
 const char* password = "";
 
 MFRC522DriverPinSimple ss_pin(5);
-
-MFRC522DriverSPI driver{ss_pin}; // Create SPI driver
-MFRC522 mfrc522{driver};         // Create MFRC522 instance
+MFRC522DriverSPI driver{ss_pin};       // Create SPI driver
+MFRC522 mfrc522{driver};               // Create MFRC522 instance
 
 String curUid = "";
 String sessionStartTime;
+const int minSessionTime = 60;         // in seconds
 
-bool checkValidRfid(String rfid){
-  //api call checkRfid(rfid)
-  // parse and return bool
+// Replace with server IP:
+const char* serverIP = "192.168.1.100";
+
+String getCurrentTime() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("Failed to obtain time");
+    return "";
+  }
+
+  char buf[20];
+  strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+  return String(buf);
+}
+
+bool checkValidRfid(String rfid) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    String url = "http://" + String(serverIP) + ":5000/check?rfid=" + rfid;
+    http.begin(url);
+
+    int code = http.GET();
+    if (code > 0) {
+      String response = http.getString();
+      Serial.println("RFID Check Response: " + response);
+      http.end();
+      return response == "true";
+    } else {
+      Serial.println("GET failed: " + http.errorToString(code));
+    }
+    http.end();
+  }
+  return false;
+}
+
+void postSession(String rfid, String startTime, String endTime) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    http.begin("http://" + String(serverIP) + ":5000/update");
+    http.addHeader("Content-Type", "application/json");
+
+    String payload = "{\"rfid\":\"" + rfid + "\",\"start_time\":\"" + startTime + "\",\"end_time\":\"" + endTime + "\"}";
+    int code = http.POST(payload);
+
+    if (code > 0) {
+      String response = http.getString();
+      Serial.println("POST Response:");
+      Serial.println(response);
+    } else {
+      Serial.println("POST failed: " + http.errorToString(code));
+    }
+    http.end();
+  }
 }
 
 void setup() {
-  Serial.begin(115200);  // Initialize serial communication
-
-  WiFi.mode(WIFI_STA); //Optional
+  Serial.begin(115200);
   WiFi.begin(ssid, password);
-  Serial.println("\nConnecting");
-
-  while(WiFi.status() != WL_CONNECTED){
-      Serial.print(".");
-      delay(100);
+  Serial.print("Connecting");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
   }
+  Serial.println("\nWiFi connected");
+  Serial.println("IP address: " + WiFi.localIP().toString());
 
-  Serial.println("\nConnected to the WiFi network");
-  Serial.print("Local ESP32 IP: ");
-  Serial.println(WiFi.localIP());
+  // Set up time
+  configTime(0, 0, "pool.ntp.org"); // Adjust timezone if needed
 
-  //time set up
-  const char* ntpServer = "pool.ntp.org";
-  const long  gmtOffset_sec = 0;        // Adjust for your timezone, e.g., -18000 for EST (-5 hours)
-  const int   daylightOffset_sec = 0;   // Add 3600 if DST is in effect
-
-  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-
-  while (!Serial);       // Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4).
-  
-  mfrc522.PCD_Init();    // Init MFRC522 board.
-  MFRC522Debug::PCD_DumpVersionToSerial(mfrc522, Serial);	// Show details of PCD - MFRC522 Card Reader details.
-	Serial.println(F("Scan PICC to see UID"));
+  // Initialize RFID
+  mfrc522.PCD_Init();
+  MFRC522Debug::PCD_DumpVersionToSerial(mfrc522, Serial);
+  Serial.println("Scan a card");
 }
 
 void loop() {
-	// Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
-	if (!mfrc522.PICC_IsNewCardPresent()) {
-		return;
-	}
+  if (!mfrc522.PICC_IsNewCardPresent()) return;
+  if (!mfrc522.PICC_ReadCardSerial()) return;
 
-	// Select one of the cards.
-	if (!mfrc522.PICC_ReadCardSerial()) {
-		return;
-	}
-
-    struct tm timeInfo;
-    time = getLocalTime(&timeinfo)
-    Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
-
-  // Save the UID in a String variable
+  // Convert UID to hex string
   String uidString = "";
   for (byte i = 0; i < mfrc522.uid.size; i++) {
-    if (mfrc522.uid.uidByte[i] < 0x10) {
-      uidString += "0"; 
-    }
+    if (mfrc522.uid.uidByte[i] < 0x10) uidString += "0";
     uidString += String(mfrc522.uid.uidByte[i], HEX);
   }
-  if(!checkValidRfid(uidString)){
+
+  Serial.println("Card Scanned: " + uidString);
+
+  if (!checkValidRfid(uidString)) {
+    Serial.println("Invalid RFID");
     return;
   }
 
-  // if uid is blank 
-    //start session
-  // if uid is different 
-    //occupied
-  // if uid == uid and sessionTime > minSession time
-    //log session
-    //uid = blank
-  
-  if (curUid = ""){
-    curUid = uidString
-    sessionStartTime = time;
-  }
-  else if (curUid != uidString){
-    //error "occupied";
-  }
-  else if (curUid == uidString && time - sessionStartTime >= minSessionTime){
-    //api call log session (rfid, sessionStartTime, sessionEndTime)
-    curUid = "";
-  }
-  if (curUid != uidString){
-    Serial.println(uidString);
-    curUid = uidString;
-  }
-  
+  String currentTime = getCurrentTime();
 
+  if (curUid == "") {
+    // Start new session
+    curUid = uidString;
+    sessionStartTime = currentTime;
+    Serial.println("Session started at " + sessionStartTime);
+  }
+  else if (curUid != uidString) {
+    Serial.println("Station occupied by: " + curUid);
+  }
+  else {
+    // Same UID, check if enough time passed
+    struct tm startTm, nowTm;
+    strptime(sessionStartTime.c_str(), "%Y-%m-%d %H:%M:%S", &startTm);
+    strptime(currentTime.c_str(), "%Y-%m-%d %H:%M:%S", &nowTm);
+
+    time_t startEpoch = mktime(&startTm);
+    time_t nowEpoch = mktime(&nowTm);
+    double secondsElapsed = difftime(nowEpoch, startEpoch);
+
+    if (secondsElapsed >= minSessionTime) {
+      postSession(uidString, sessionStartTime, currentTime);
+      curUid = "";
+      Serial.println("Session logged.");
+    } else {
+      Serial.println("Not enough time elapsed.");
+    }
+  }
+
+  delay(1000); // small delay to avoid reading the same card repeatedly
 }

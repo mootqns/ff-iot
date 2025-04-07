@@ -55,14 +55,10 @@ def check_data():
             conn.close()
 
             # Check if the RFID exists
-            if result > 0:
-                return jsonify({"status": "success", "message": "RFID is valid", "rfid": rfid})
-            else:
-                return jsonify({"status": "error", "message": "RFID not found"})
+            return "true" if result > 0 else "false"
         except Exception as e:
-            return jsonify({"status": "error", "message": str(e)})
-    else:
-        return jsonify({"status": "error", "message": "Invalid input"})
+            return "false"
+    return "false"
 
 
 if __name__ == '__main__':
