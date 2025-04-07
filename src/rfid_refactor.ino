@@ -6,7 +6,7 @@
 #include <MFRC522Debug.h>
 #include "time.h"
 
-const char* ssid = "TMOBILE-43AA";
+const char* ssid = "CenturyLink2609-2.4G";
 const char* password = "";
 
 MFRC522DriverPinSimple ss_pin(5);
@@ -18,7 +18,7 @@ String sessionStartTime;
 const int minSessionTime = 60;         // in seconds
 
 // Replace with server IP:
-const char* serverIP = "192.168.1.100";
+const char* serverIP = "";
 
 String getCurrentTime() {
   struct tm timeinfo;
@@ -33,21 +33,32 @@ String getCurrentTime() {
 }
 
 bool checkValidRfid(String rfid) {
-  if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient http;
-    String url = "http://" + String(serverIP) + ":5000/check?rfid=" + rfid;
-    http.begin(url);
+  String error_code = "connection refused";
+  int retry_count = 0;
+  
+  while (error_code == "connection refused" && retry_count < 5) {
+    if (WiFi.status() == WL_CONNECTED) {
+      HTTPClient http;
+      String url = "http://" + String(serverIP) + ":5000/check?rfid=" + rfid;
+      http.begin(url);
 
-    int code = http.GET();
-    if (code > 0) {
-      String response = http.getString();
-      Serial.println("RFID Check Response: " + response);
+      int code = http.GET();
+      if (code > 0) {
+        String response = http.getString();
+        Serial.println("RFID Check Response: " + response);
+        http.end();
+        return response == "true";
+      } else {
+        retry_count++;
+        error_code = http.errorToString(code);
+        Serial.println("GET failed: " + error_code);
+      }
       http.end();
-      return response == "true";
-    } else {
-      Serial.println("GET failed: " + http.errorToString(code));
     }
-    http.end();
+    else{
+      return false;
+    }
+    delay(1000); // Retry after 1 second if connection failed
   }
   return false;
 }
@@ -107,6 +118,7 @@ void loop() {
 
   if (!checkValidRfid(uidString)) {
     Serial.println("Invalid RFID");
+    delay(1000);
     return;
   }
 
