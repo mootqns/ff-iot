@@ -1,12 +1,24 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <MFRC522v2.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <MFRC522v2.h>
 #include <MFRC522DriverSPI.h>
 #include <MFRC522DriverPinSimple.h>
 #include <MFRC522Debug.h>
+#include <Adafruit_NeoPixel.h>
 #include "time.h"
 
-const char* ssid = "CenturyLink2609-2.4G";
+// Addressable LED Strip Pin
+#define LED_PIN  13
+#define NUM_LEDS 14
+
+// Create the NeoPixel LED strip object
+Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+//wifi setup
+const char* ssid = "CPS-Cyber-01";
 const char* password = "";
 
 MFRC522DriverPinSimple ss_pin(5);
@@ -15,10 +27,10 @@ MFRC522 mfrc522{driver};               // Create MFRC522 instance
 
 String curUid = "";
 String sessionStartTime;
-const int minSessionTime = 60;         // in seconds
+const int minSessionTime = 10;         // in seconds
 
 // Replace with server IP:
-const char* serverIP = "";
+const char* serverIP = "35.185.229.173";
 
 String getCurrentTime() {
   struct tm timeinfo;
@@ -100,6 +112,12 @@ void setup() {
   mfrc522.PCD_Init();
   MFRC522Debug::PCD_DumpVersionToSerial(mfrc522, Serial);
   Serial.println("Scan a card");
+
+  // Initialize the LED strip
+  strip.begin();
+  strip.show();  
+  strip.setBrightness(100);  // Set brightness (0-255)
+
 }
 
 void loop() {
@@ -117,8 +135,25 @@ void loop() {
 
   if (!checkValidRfid(uidString)) {
     Serial.println("Invalid RFID");
+
+    //set red
+    for (int i = 0; i < NUM_LEDS; i++) {
+      strip.setPixelColor(i, strip.Color(255, 0, 0)); 
+    }
+    strip.show();
     delay(1000);
+    //clear lights
+    for (int i = 0; i < NUM_LEDS; i++) {
+      strip.setPixelColor(i, strip.Color(0, 0, 0)); 
+    }
+    strip.show();
     return;
+  }
+  else{
+    for (int i = 0; i < NUM_LEDS; i++) {
+      strip.setPixelColor(i, strip.Color(0, 255, 0)); 
+    }
+    strip.show();
   }
 
   String currentTime = getCurrentTime();
@@ -146,6 +181,12 @@ void loop() {
       postSession(uidString, sessionStartTime, currentTime);
       curUid = "";
       Serial.println("Session logged.");
+
+      //Clear lights
+      for (int i = 0; i < NUM_LEDS; i++) {
+        strip.setPixelColor(i, strip.Color(0, 0, 0)); 
+      }
+      strip.show();
     } else {
       Serial.println("Not enough time elapsed.");
     }
