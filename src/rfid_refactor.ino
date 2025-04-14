@@ -33,25 +33,24 @@ String getCurrentTime() {
 }
 
 bool checkValidRfid(String rfid) {
-  String error_code = "connection refused";
+  int http_code = -1;
   int retry_count = 0;
   
-  while (error_code == "connection refused" && retry_count < 5) {
+  while (http_code < 0 && retry_count < 5) {
     if (WiFi.status() == WL_CONNECTED) {
       HTTPClient http;
       String url = "http://" + String(serverIP) + ":5000/check?rfid=" + rfid;
       http.begin(url);
 
-      int code = http.GET();
-      if (code > 0) {
+      http_code = http.GET();
+      if (http_code > 0) {
         String response = http.getString();
         Serial.println("RFID Check Response: " + response);
         http.end();
         return response == "true";
       } else {
         retry_count++;
-        error_code = http.errorToString(code);
-        Serial.println("GET failed: " + error_code);
+        Serial.println("GET failed: " + http_code);
       }
       http.end();
     }
