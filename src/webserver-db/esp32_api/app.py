@@ -62,7 +62,7 @@ def check_data():
 
 # Route to check if RFID exists in valid_RFIDs
 @app.route('/average', methods=['GET'])
-def check_data():
+def get_average():
     rfid = request.args.get('rfid')  # Get data from URL parameters
 
     if rfid:

@@ -6,4 +6,4 @@ curl -X POST -H "Content-Type: application/json"     -d '{"rfid":"123456","start
 
 curl -X GET "http://localhost:5000/check?rfid=1bbda80d"
 
-
+curl -X GET "http://localhost:5000/average?rfid=3c84be79"
