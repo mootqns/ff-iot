@@ -1,4 +1,3 @@
-#include <Arduino.h>
 #include <Audio.h>
 #include <SPIFFS.h>
 #include <Wire.h>
@@ -8,29 +7,45 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
+// Prototypes
+String queryDB(String scannedID);
+void OnDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len);
+void playAudio(const char* path);
+void detectMotion();
+
 // WiFi
-const char* ssid = "CPS-Cyber-01";
-const char* password = "unhappy3sandstonedeflector";
+const char* ssid = "";
+const char* password = "";
 
-// I2S bus configuration
-#define I2S_DOUT 5
-#define I2S_BCLK 18
-#define I2S_LRC 19
+// Server IP
+const char* serverIP = ""; 
 
-// OLED Display configuration
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-#define OLED_RESET -1
-#define SCREEN_ADDRESS 0x3C
+// I2S bus (amp)
+constexpr int I2S_DOUT = 5;
+constexpr int I2S_BCLK = 18;
+constexpr int I2S_LRC = 19;
 
-// Motion Detector
-const int PIN_TO_SENSOR = 13;
+// OLED display 
+constexpr int SCREEN_WIDTH = 128;
+constexpr int SCREEN_HEIGHT = 64;
+constexpr int OLED_RESET = -1;
+constexpr int SCREEN_ADDRESS = 0x3C;
+
+// File path in SPIFFS
+const char* mp3FilePath = "/boing.mp3";
+
+// Motion detector
+constexpr int MOTION_PIN = 13;
 int currentState = LOW;
 int previousState = LOW;
-bool localMotionDetected = false;
+bool motionDetected = false;
 
-// MP3 file path
-const char* mp3FilePath = "/boing.mp3";
+// Data from ESP-NOW
+String bathroomUser = "";
+
+// To handle intruder v.s. valid user logic
+bool dataReceived = false;
+bool activeSession = false;
 
 // OLED display object
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
@@ -38,132 +53,35 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 // Audio object
 Audio audio;
 
-// Incoming data from ESP-NOW
-String bathroomUser = "";
-
-// Server IP
-const char* serverIP = "35.185.229.173"; 
-
-bool dataReceived = false;
-bool activeSession = false;
-
-String queryDB(String rfid) {
-  int http_code = -1;
-  int retry_count = 0;
-
-  while (http_code < 0 && retry_count < 5) {
-    HTTPClient http;
-    Serial.println(WiFi.localIP());
-    Serial.println(WiFi.status());
-    String url = "http://" + String(serverIP) + ":5000/average?rfid=" + rfid;
-    Serial.println("Sending request to: " + url);
-
-    http.begin(url);
-    http_code = http.GET();
-
-    if (http_code > 0) {
-      Serial.println("HTTP Code: " + String(http_code));
-      String response = http.getString();
-      Serial.println("RFID Check Response: " + response);
-      http.end();
-      return response;
-    } else {
-      Serial.println("GET failed, code: " + String(http_code));
-      retry_count++;
-    }
-    http.end();
-    delay(5000);
-  }
-  return "bad";
-}
-
-// ESP-NOW receive callback
-void OnDataRecv(const uint8_t* mac, const uint8_t *incomingData, int len) {
-  char incomingMessage[64];
-  if (len < sizeof(incomingMessage)) {
-    memcpy(incomingMessage, incomingData, len);
-    incomingMessage[len] = '\0'; 
-
-    if (activeSession) {
-      if (String(incomingMessage) == bathroomUser) {
-          Serial.println("session ended");
-          activeSession = false;
-          return;
-      }
-    }
-
-    bathroomUser = String(incomingMessage);
-    Serial.print("Received via ESP-NOW: ");
-    Serial.println(bathroomUser);
-
-    dataReceived = true;
-    activeSession = true;
-  } 
-  else {
-    Serial.println("Received data unexpected size");
-  }
-}
-
-// MP3 playing logic
-void playAudio(const char* path) {
-  if (SPIFFS.exists(path)) {
-    Serial.print("Playing audio: ");
-    Serial.println(path);
-    audio.connecttoFS(SPIFFS, path);
-  } else {
-    Serial.print("Error: File not found: ");
-    Serial.println(path);
-  }
-}
-
-// Motion detection logic
-void detectMotion() {
-  previousState = currentState;
-  currentState = digitalRead(PIN_TO_SENSOR);
-
-  if (previousState == LOW && currentState == HIGH) {
-    localMotionDetected = true;
-    Serial.println("Motion detected");
-    if (activeSession == false) {
-      playAudio(mp3FilePath);
-    }
-  } 
-  else if (previousState == HIGH && currentState == LOW) {
-    localMotionDetected = false;
-    Serial.println("Motion ended");
-  }
-}
-
 void setup() {
   Serial.begin(115200);
 
-  // Motion sensor pin
-  pinMode(PIN_TO_SENSOR, INPUT);
+  // Motion sensor setup
+  pinMode(MOTION_PIN, INPUT);
 
-  // Initialize ESP-NOW
+  // Connect to WiFi
   WiFi.mode(WIFI_AP);
-
   WiFi.begin(ssid, password);
   Serial.println("\nConnecting to WiFi");
   while(WiFi.status() != WL_CONNECTED){
       Serial.print(".");
       delay(100);
   }
-  Serial.println("\nConnected to the WiFi network");
 
+  // Initialize ESP-NOW
   if (esp_now_init() != ESP_OK) {
     Serial.println("Error initializing ESP-NOW");
     return;
   }
   esp_now_register_recv_cb(OnDataRecv);
 
-  // Channel Debug Stuff
-  int currentChannel = WiFi.channel(); 
-  Serial.println("Channel: ");
-  Serial.println(currentChannel);
+  // Channel debug
+  // int currentChannel = WiFi.channel(); 
+  // Serial.println("Channel: ");
+  // Serial.println(currentChannel);
   
-  // Initialize I2C communication for OLED
-  Wire.begin(23, 22); // SDA, SCL
+  // Initialize I2C for OLED
+  Wire.begin(23, 22); // (SDA, SCL)
 
   // Initialize OLED display
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
@@ -171,10 +89,6 @@ void setup() {
     for (;;);
   }
   display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
-  display.setTextSize(1);
-  display.setCursor(0, 0);
-  display.print(F("boing.mp3"));
   display.display();
 
   // Initialize SPIFFS
@@ -182,30 +96,25 @@ void setup() {
     Serial.println("SPIFFS Initialization Failed");
     return;
   }
-  Serial.println("SPIFFS Initialized");
 
   // Initialize I2S audio
-  Serial.println("Initializing I2S...");
   audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
   audio.setVolume(10); // Set volume (0–21)
-
-  // Start MP3 playback
-  playAudio(mp3FilePath);
 }
 
 void loop() {
   audio.loop();
   detectMotion();
+
   if (activeSession) {
     if (dataReceived) {
-      String rawTime = queryDB(bathroomUser); // e.g., "67.8912"
+      String rawTime = queryDB(bathroomUser);
       dataReceived = false;
   
       float totalSeconds = rawTime.toFloat();
       int minutes = (int)(totalSeconds / 60);
       float seconds = fmod(totalSeconds, 60.0);
   
-      // Format string with 2 decimal places for seconds
       String msg = "User " + bathroomUser + " used: " + String(minutes) + " min " + String(seconds, 2) + " sec";
   
       display.clearDisplay();
@@ -215,9 +124,97 @@ void loop() {
     }
   }
   else {
+    // on exit of the bathroom...
     display.clearDisplay();
     display.display();
   }
-  
+}
+
+String queryDB(String scannedID) {
+  String response = "";
+  int http_code = -1;
+  int retry_count = 0;
+
+  while (retry_count < 5) {
+    HTTPClient http;
+    String url = "http://" + String(serverIP) + ":5000/average?rfid=" + scannedID;
+    Serial.println("Sending request to: " + url);
+
+    http.begin(url);
+    http_code = http.GET();
+
+    if (http_code > 0) {
+      Serial.println("HTTP Code: " + String(http_code));
+      response = http.getString();
+      Serial.println("RFID Check Response: " + response);
+      http.end();
+      return response; 
+    } 
+    else {
+      Serial.println("GET failed, code: " + String(http_code));
+      retry_count++;
+      http.end(); 
+      delay(5000);
+    }
+  }
+
+  return response; 
+}
+
+// ESP-NOW callback
+void OnDataRecv(const uint8_t* mac, const uint8_t *incomingData, int len) {
+  char scannedID[64];
+  if (len < sizeof(scannedID)) {
+    memcpy(scannedID, incomingData, len);
+    scannedID[len] = '\0'; 
+    
+    // If we get the same RFID twice in a row
+    if (activeSession && String(scannedID) == bathroomUser) {
+          Serial.println("Session ended");
+          activeSession = false;
+          return;
+    }
+
+    bathroomUser = String(scannedID);
+    Serial.print("Session started for: ");
+    Serial.println(bathroomUser);
+    
+    // update bools so we can handle a valid bathroom user
+    dataReceived = true;
+    activeSession = true;
+  } 
+  else {
+    Serial.println("Received unexpected data size");
+  }
+}
+
+void playAudio(const char* path) {
+  if (SPIFFS.exists(path)) {
+    Serial.print("Playing: ");
+    Serial.println(path);
+    audio.connecttoFS(SPIFFS, path);
+  } 
+  else {
+    Serial.print("SPIFFS file not found: ");
+    Serial.println(path);
+  }
+}
+
+void detectMotion() {
+  previousState = currentState;
+  currentState = digitalRead(MOTION_PIN);
+
+  if (previousState == LOW && currentState == HIGH) {
+    Serial.println("Motion detected");
+    
+    // if an intruder, sound alarm
+    if (activeSession == false) {
+      playAudio(mp3FilePath);
+    }
+
+  } 
+  else if (previousState == HIGH && currentState == LOW) {
+    Serial.println("Motion ended");
+  }
 }
 
