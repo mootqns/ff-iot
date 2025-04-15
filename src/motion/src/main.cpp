@@ -6,23 +6,78 @@
 
 SMTPSession smtp;
 
+Session_Config config;
+SMTP_Message message;
+
+// Callback function to get the Email sending status
+// void smtpCallback(SMTP_Status status);
+
 const int PIN_TO_SENSOR = 14;
 // LOW readings indicate no movement, whereas HIGH indicates a sensor trip
 int currentState = LOW;
 int previousState = LOW;
 
-// const char* accountSID = TWILIO_SID;
-// const char* authToken = TWILIO_AUTH;
-// const char* to = TWILIO_TO; 
-// const char* from = TWILIO_FROM; 
-
 bool currState = false;
-esp_now_peer_info_t peerInfo;
+// esp_now_peer_info_t peerInfo;
 
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  Serial.print("\r\nLast Packet Send Status:\t");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+void smtpConfig() {
+  config.server.host_name = "smtp.gmail.com"; 
+  config.server.port = 465; // port 465 is used for encrypted SMTP connections... port 25 for unencrypted
+  config.login.email = AUTHOR_EMAIL; 
+  config.login.password = AUTHOR_PASSWORD;
+  config.login.user_domain = "";
+  
+  config.secure.mode = esp_mail_secure_mode_ssl_tls;
+  /*
+   Set the NTP config time
+   For times east of the Prime Meridian use 0-12
+   For times west of the Prime Meridian add 12 to the offset.
+   Ex. American/Denver GMT would be -6. 6 + 12 = 18
+   See https://en.wikipedia.org/wiki/Time_zone for a list of the GMT/UTC timezone offsets
+   */
+  config.time.ntp_server = "pool.ntp.org,time.nist.gov";
+  config.time.gmt_offset = 20;
+  config.time.day_light_offset = 0;
+
+  // for debugging
+  smtp.callback([](SMTP_Status status){
+    Serial.println(status.info());
+  });
 }
+
+void smtpMessage() {
+  message.sender.name = "Flush Factory";
+  message.sender.email = AUTHOR_EMAIL;
+
+  String subject = "Test message";
+  message.subject = subject;
+
+  message.addRecipient(F("Arvand"), RECIPIENT_SMS);
+
+  String body = "test";
+  message.text.content = body;
+
+  // enabling non-ASCII words in the message
+  message.text.transfer_encoding = "base64";
+  message.text.charSet = F("utf-8"); 
+
+  if (!smtp.connect(&config)) {
+    Serial.println("Failed to connect to mail server.");
+    return;
+  }
+  if (!MailClient.sendMail(&smtp, &message)) {
+    Serial.println(smtp.errorReason());
+  } else {
+    Serial.println("Email sent successfully!");
+  }  
+
+  smtp.closeSession();
+}
+
+// void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+//   Serial.print("\r\nLast Packet Send Status:\t");
+//   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+// }
 
 void connect(){
   delay(1000);
@@ -40,21 +95,21 @@ void connect(){
   Serial.print("Local ESP32 IP: ");
   Serial.println(WiFi.localIP());
 
-  if (esp_now_init() != ESP_OK) {
-    Serial.println("Error initializing ESP-NOW");
-    return;
-  }
+  // if (esp_now_init() != ESP_OK) {
+  //   Serial.println("Error initializing ESP-NOW");
+  //   return;
+  // }
 
-  esp_now_register_send_cb(OnDataSent);
+  // esp_now_register_send_cb(OnDataSent);
 
-  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
-  peerInfo.channel = 0;  
-  peerInfo.encrypt = false;
+  // memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+  // peerInfo.channel = 0;  
+  // peerInfo.encrypt = false;
 
-  if (esp_now_add_peer(&peerInfo) != ESP_OK){
-    Serial.println("Failed to add peer");
-    return;
-  }
+  // if (esp_now_add_peer(&peerInfo) != ESP_OK){
+  //   Serial.println("Failed to add peer");
+  //   return;
+  // }
 }
 
 // void postSession() {
@@ -103,11 +158,13 @@ void detect(){
 void setup(){
   Serial.begin(115200);
   connect();
+  smtpConfig();
+  smtpMessage();
   pinMode(PIN_TO_SENSOR, INPUT); // reading sensor data from pin 14
 }
 
 void loop(){
-  detect();
-  delay(2000);
+  // detect();
+  // delay(2000);
   // delay(60000); // every minute
 }
