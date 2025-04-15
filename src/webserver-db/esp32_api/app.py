@@ -60,6 +60,34 @@ def check_data():
             return "false"
     return "false"
 
+# Route to check if RFID exists in valid_RFIDs
+@app.route('/average', methods=['GET'])
+def check_data():
+    rfid = request.args.get('rfid')  # Get data from URL parameters
+
+    if rfid:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Call the stored procedure
+            cursor.callproc('GetAverageLength', (rfid,))
+            
+            # Get the result of the query
+            average = None
+            for result in cursor.stored_results():
+                row = result.fetchone()
+                if row:
+                    average = row[0]
+
+            cursor.close()
+            conn.close()
+
+            return jsonify({"status": "success", "average": average})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)})
+    else:
+        return jsonify({"status": "error", "message": "Invalid input"})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
