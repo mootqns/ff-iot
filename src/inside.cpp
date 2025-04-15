@@ -44,7 +44,8 @@ String bathroomUser = "";
 // Server IP
 const char* serverIP = "35.185.229.173"; 
 
-bool dataReceived = false; // Flag to track if data has been received
+bool dataReceived = false;
+bool activeSession = false;
 
 String queryDB(String rfid) {
   int http_code = -1;
@@ -78,18 +79,40 @@ String queryDB(String rfid) {
 
 // ESP-NOW receive callback
 void OnDataRecv(const uint8_t* mac, const uint8_t *incomingData, int len) {
-  char incomingMessage[128]; // Adjust size as needed
+  char incomingMessage[64];
   if (len < sizeof(incomingMessage)) {
     memcpy(incomingMessage, incomingData, len);
-    incomingMessage[len] = '\0';  // Null-terminate the string
+    incomingMessage[len] = '\0'; 
+
+    if (activeSession) {
+      if (String(incomingMessage) == bathroomUser) {
+          Serial.println("session ended");
+          activeSession = false;
+          return;
+      }
+    }
+
     bathroomUser = String(incomingMessage);
     Serial.print("Received via ESP-NOW: ");
     Serial.println(bathroomUser);
+
     dataReceived = true;
-   
+    activeSession = true;
   } 
   else {
     Serial.println("Received data unexpected size");
+  }
+}
+
+// MP3 playing logic
+void playAudio(const char* path) {
+  if (SPIFFS.exists(path)) {
+    Serial.print("Playing audio: ");
+    Serial.println(path);
+    audio.connecttoFS(SPIFFS, path);
+  } else {
+    Serial.print("Error: File not found: ");
+    Serial.println(path);
   }
 }
 
@@ -100,11 +123,14 @@ void detectMotion() {
 
   if (previousState == LOW && currentState == HIGH) {
     localMotionDetected = true;
-    Serial.println("Motion detected (local)");
+    Serial.println("Motion detected");
+    if (activeSession == false) {
+      playAudio(mp3FilePath);
+    }
   } 
   else if (previousState == HIGH && currentState == LOW) {
     localMotionDetected = false;
-    Serial.println("Motion ended (local)");
+    Serial.println("Motion ended");
   }
 }
 
@@ -164,22 +190,34 @@ void setup() {
   audio.setVolume(10); // Set volume (0–21)
 
   // Start MP3 playback
-  if (SPIFFS.exists(mp3FilePath)) {
-    Serial.print("Playing MP3 from SPIFFS: ");
-    Serial.println(mp3FilePath);
-    audio.connecttoFS(SPIFFS, mp3FilePath);
-  } 
-  else {
-    Serial.println("Error: MP3 file not found in SPIFFS");
-  }
+  playAudio(mp3FilePath);
 }
 
 void loop() {
-  audio.loop(); // Keep the audio looping
-
-  // if (dataReceived) {
-  //   String test = queryDB(bathroomUser);
-  //   Serial.println(test);
-  //   dataReceived = false;  // Reset flag to prevent querying again until new data is received
-  // }
+  audio.loop();
+  detectMotion();
+  if (activeSession) {
+    if (dataReceived) {
+      String rawTime = queryDB(bathroomUser); // e.g., "67.8912"
+      dataReceived = false;
+  
+      float totalSeconds = rawTime.toFloat();
+      int minutes = (int)(totalSeconds / 60);
+      float seconds = fmod(totalSeconds, 60.0);
+  
+      // Format string with 2 decimal places for seconds
+      String msg = "User " + bathroomUser + " used: " + String(minutes) + " min " + String(seconds, 2) + " sec";
+  
+      display.clearDisplay();
+      display.setCursor(0, 0);
+      display.print(msg);
+      display.display();
+    }
+  }
+  else {
+    display.clearDisplay();
+    display.display();
+  }
+  
 }
+
