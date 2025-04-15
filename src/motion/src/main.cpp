@@ -1,7 +1,7 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <HTTPClient.h>
-#include <ESP_Mail_Client.h>
+#include <ESP_Mail_Client.h> // https://github.com/mobizt/ESP-Mail-Client
 #include "secrets.h"
 
 SMTPSession smtp;
@@ -21,25 +21,18 @@ bool currState = false;
 // esp_now_peer_info_t peerInfo;
 
 void smtpConfig() {
-  config.server.host_name = "smtp.gmail.com"; 
+  config.server.host_name = "smtp.gmail.com"; // gmail SMTP server
   config.server.port = 465; // port 465 is used for encrypted SMTP connections... port 25 for unencrypted
   config.login.email = AUTHOR_EMAIL; 
   config.login.password = AUTHOR_PASSWORD;
   config.login.user_domain = "";
   
   config.secure.mode = esp_mail_secure_mode_ssl_tls;
-  /*
-   Set the NTP config time
-   For times east of the Prime Meridian use 0-12
-   For times west of the Prime Meridian add 12 to the offset.
-   Ex. American/Denver GMT would be -6. 6 + 12 = 18
-   See https://en.wikipedia.org/wiki/Time_zone for a list of the GMT/UTC timezone offsets
-   */
   config.time.ntp_server = "pool.ntp.org,time.nist.gov";
   config.time.gmt_offset = 20;
   config.time.day_light_offset = 0;
 
-  // for debugging
+  // registering a callback function that returns the SMTP connection status
   smtp.callback([](SMTP_Status status){
     Serial.println(status.info());
   });
@@ -49,18 +42,17 @@ void smtpMessage() {
   message.sender.name = "Flush Factory";
   message.sender.email = AUTHOR_EMAIL;
 
-  String subject = "Test message";
-  message.subject = subject;
-
   message.addRecipient(F("Arvand"), RECIPIENT_SMS);
 
-  String body = "test";
+  String body = "hello 😊";
   message.text.content = body;
 
   // enabling non-ASCII words in the message
   message.text.transfer_encoding = "base64";
   message.text.charSet = F("utf-8"); 
+}
 
+void smtpDeliver() {
   if (!smtp.connect(&config)) {
     Serial.println("Failed to connect to mail server.");
     return;
@@ -145,6 +137,7 @@ void detect(){
     // currState = true;
     Serial.println("WEE WOO");
     // postSession();
+    smtpDeliver();
   }
   else if (previousState == HIGH && currentState == LOW) // the person has moved from the motion sensor's proximity
   {
@@ -164,7 +157,6 @@ void setup(){
 }
 
 void loop(){
-  // detect();
-  // delay(2000);
-  // delay(60000); // every minute
+  detect();
+  delay(30000); // every thirty seconds
 }
