@@ -4,68 +4,32 @@
 //#include <MFRC522DriverI2C.h>
 #include <MFRC522DriverPinSimple.h>
 #include <MFRC522Debug.h>
-
-const char* ssid = "TMOBILE-43AA";
-const char* password = "";
-
-// Learn more about using SPI/I2C or check the pin assigment for your board: https://github.com/OSSLibraries/Arduino_MFRC522v2#pin-layout
-MFRC522DriverPinSimple ss_pin(5);
-
-MFRC522DriverSPI driver{ss_pin}; // Create SPI driver
-//MFRC522DriverI2C driver{};     // Create I2C driver
-MFRC522 mfrc522{driver};         // Create MFRC522 instance
-
-String curUid = "";
-
-void setup() {
-  Serial.begin(115200);  // Initialize serial communication
-
-  WiFi.mode(WIFI_STA); //Optional
-  WiFi.begin(ssid, password);
-  Serial.println("\nConnecting");
-
-  while(WiFi.status() != WL_CONNECTED){
-      //Serial.print(".");
-      delay(100);
-  }
-
-  Serial.println("\nConnected to the WiFi network");
-  Serial.print("Local ESP32 IP: ");
-  Serial.println(WiFi.localIP());
-
-  while (!Serial);       // Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4).
+string getAverageLength(String rfid) {
+  int http_code = -1;
+  int retry_count = 0;
   
-  mfrc522.PCD_Init();    // Init MFRC522 board.
-  MFRC522Debug::PCD_DumpVersionToSerial(mfrc522, Serial);	// Show details of PCD - MFRC522 Card Reader details.
-	Serial.println(F("Scan PICC to see UID"));
-}
+  while (http_code < 0 && retry_count < 5) {
+    if (WiFi.status() == WL_CONNECTED) {
+      HTTPClient http;
+      String url = "http://" + String(serverIP) + ":5000/average?rfid=" + rfid;
+      http.begin(url);
 
-void loop() {
-	// Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
-	if (!mfrc522.PICC_IsNewCardPresent()) {
-		return;
-	}
-
-	// Select one of the cards.
-	if (!mfrc522.PICC_ReadCardSerial()) {
-		return;
-	}
-
-  //Serial.print("Card UID: ");
-  //MFRC522Debug::PrintUID(Serial, (mfrc522.uid));
-  //Serial.println();
-
-  // Save the UID on a String variable
-  String uidString = "";
-  for (byte i = 0; i < mfrc522.uid.size; i++) {
-    if (mfrc522.uid.uidByte[i] < 0x10) {
-      uidString += "0"; 
+      http_code = http.GET();
+      if (http_code > 0) {
+        String response = http.getString();
+        Serial.println("RFID Check Response: " + response);
+        http.end();
+        return response;
+      } else {
+        retry_count++;
+        Serial.println("GET failed: " + http_code);
+      }
+      http.end();
     }
-    uidString += String(mfrc522.uid.uidByte[i], HEX);
+    else{
+      return false;
+    }
+    delay(1000); // Retry after 1 second if connection failed
   }
-  if (curUid != uidString){
-    Serial.println(uidString);
-    curUid = uidString;
-  }
-  
+  return false;
 }

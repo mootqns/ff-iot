@@ -83,11 +83,11 @@ def get_average():
             cursor.close()
             conn.close()
 
-            return jsonify({"status": "success", "average": average})
+            return str(average)
         except Exception as e:
-            return jsonify({"status": "error", "message": str(e)})
+            return None
     else:
-        return jsonify({"status": "error", "message": "Invalid input"})
+        None
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
