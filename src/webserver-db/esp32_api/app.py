@@ -1,5 +1,8 @@
 from flask import Flask, request, jsonify
 from db_config import get_db_connection
+import smtplib
+from email.mime.text import MIMEText
+from confidential import AUTHOR_EMAIL, AUTHOR_PASSWORD, RECIPIENT_SMS
 
 app = Flask(__name__)
 
@@ -89,11 +92,18 @@ def get_average():
     else:
         None
 
-# Route to check if RFID exists in valid_RFIDs
+# Route to send text notifications
 @app.route('/intruder', methods=['GET'])
 def get_average():
+    msg = MIMEText("Intruder!")
+    msg['From'] = AUTHOR_EMAIL
+    msg['To'] = RECIPIENT_SMS # sends message to mobile carrier SMS gateway, which converts SMTP to SMS
+
     try:
-        
+        # connect to the SMTP (gmail) server via a secure SSL connection
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp_server:
+            smtp_server.login(AUTHOR_EMAIL, AUTHOR_PASSWORD)
+            smtp_server.sendmail(AUTHOR_EMAIL, RECIPIENT_SMS, msg.as_string())
 
         return "Success"
     except Exception as e:
