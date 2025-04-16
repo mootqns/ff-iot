@@ -6,16 +6,26 @@
 #include <esp_now.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <ESP_Mail_Client.h> // https://github.com/mobizt/ESP-Mail-Client
+#include <secrets.h>
 
 // Prototypes
 String queryDB(String scannedID);
 void OnDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len);
 void playAudio(const char* path);
 void detectMotion();
+void smtpConfig();
+void smtpMessage();
+void smtpDeliver();
 
 // WiFi
 const char* ssid = "";
 const char* password = "";
+
+// Text notification
+SMTPSession smtp;
+Session_Config config;
+SMTP_Message message;
 
 // Server IP
 const char* serverIP = ""; 
@@ -67,6 +77,10 @@ void setup() {
       Serial.print(".");
       delay(100);
   }
+
+  // Configure SMTP server
+  smtpConfig();
+  smtpMessage();
 
   // Initialize ESP-NOW
   if (esp_now_init() != ESP_OK) {
@@ -210,6 +224,7 @@ void detectMotion() {
     // if an intruder, sound alarm
     if (activeSession == false) {
       playAudio(mp3FilePath);
+      smtpDeliver();
     }
 
   } 
@@ -218,3 +233,48 @@ void detectMotion() {
   }
 }
 
+void smtpConfig() {
+  config.server.host_name = "smtp.gmail.com"; // gmail SMTP server
+  config.server.port = 465; // port 465 is used for encrypted SMTP connections... port 25 for unencrypted
+  config.login.email = AUTHOR_EMAIL; 
+  config.login.password = AUTHOR_PASSWORD;
+  config.login.user_domain = "";
+  
+  config.secure.mode = esp_mail_secure_mode_ssl_tls;
+  config.time.ntp_server = "pool.ntp.org,time.nist.gov";
+  config.time.gmt_offset = 20;
+  config.time.day_light_offset = 0;
+
+  // registering a callback function that returns the SMTP connection status
+  smtp.callback([](SMTP_Status status){
+    Serial.println(status.info());
+  });
+}
+
+void smtpMessage() {
+  message.sender.name = "Flush Factory";
+  message.sender.email = AUTHOR_EMAIL;
+
+  message.addRecipient(F("Arvand"), RECIPIENT_SMS);
+
+  String body = "hello 😊";
+  message.text.content = body;
+
+  // enabling non-ASCII words in the message
+  message.text.transfer_encoding = "base64";
+  message.text.charSet = F("utf-8"); 
+}
+
+void smtpDeliver() {
+  if (!smtp.connect(&config)) {
+    Serial.println("Failed to connect to mail server.");
+    return;
+  }
+  if (!MailClient.sendMail(&smtp, &message)) {
+    Serial.println(smtp.errorReason());
+  } else {
+    Serial.println("Email sent successfully!");
+  }  
+
+  smtp.closeSession();
+}
