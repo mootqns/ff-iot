@@ -94,7 +94,7 @@ def get_average():
 
 # Route to send text notifications
 @app.route('/intruder', methods=['GET'])
-def get_average():
+def intruder():
     msg = MIMEText("Intruder!")
     msg['From'] = AUTHOR_EMAIL
     msg['To'] = RECIPIENT_SMS # sends message to mobile carrier SMS gateway, which converts SMTP to SMS
