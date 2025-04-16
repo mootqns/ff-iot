@@ -89,5 +89,15 @@ def get_average():
     else:
         None
 
+# Route to check if RFID exists in valid_RFIDs
+@app.route('/intruder', methods=['GET'])
+def get_average():
+    try:
+        
+
+        return "Success"
+    except Exception as e:
+        return "Fail"
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
