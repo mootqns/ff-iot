@@ -8,10 +8,11 @@
 #include <HTTPClient.h>
 
 // Prototypes
-String queryDB(String scannedID);
 void OnDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len);
 void playAudio(const char* path);
 void detectMotion();
+String sendHTTPRequest(String endpoint);
+String queryDB(String scannedID);
 void intruderNotification();
 
 // WiFi
@@ -48,6 +49,10 @@ String bathroomUser = "";
 bool dataReceived = false;
 bool activeSession = false;
 
+// To ensure texts are sent at sane intervals
+unsigned long textTime = 0;
+const unsigned long maxTextDuration = 120000; 
+
 // OLED display object
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
@@ -65,7 +70,6 @@ void setup() {
   WiFi.begin(ssid, password);
   Serial.println("\nConnecting to WiFi");
   while(WiFi.status() != WL_CONNECTED){
-      Serial.print(".");
       delay(100);
   }
 
@@ -76,11 +80,6 @@ void setup() {
   }
   esp_now_register_recv_cb(OnDataRecv);
 
-  // Channel debug
-  // int currentChannel = WiFi.channel(); 
-  // Serial.println("Channel: ");
-  // Serial.println(currentChannel);
-  
   // Initialize I2C for OLED
   Wire.begin(23, 22); // (SDA, SCL)
 
@@ -101,6 +100,9 @@ void setup() {
   // Initialize I2S audio
   audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
   audio.setVolume(10); // Set volume (0–21)
+
+  // Ensure first text goes through
+  textTime = millis() - maxTextDuration;
 }
 
 void loop() {
@@ -131,14 +133,14 @@ void loop() {
   }
 }
 
-String queryDB(String scannedID) {
+String sendHTTPRequest(String endpoint) {
   String response = "";
   int http_code = -1;
   int retry_count = 0;
+  String url = "http://" + String(serverIP) + ":5000" + endpoint;
 
   while (retry_count < 5) {
     HTTPClient http;
-    String url = "http://" + String(serverIP) + ":5000/average?rfid=" + scannedID;
     Serial.println("Sending request to: " + url);
 
     http.begin(url);
@@ -147,19 +149,29 @@ String queryDB(String scannedID) {
     if (http_code > 0) {
       Serial.println("HTTP Code: " + String(http_code));
       response = http.getString();
-      Serial.println("RFID Check Response: " + response);
+      Serial.println("HTTP Response: " + response);
       http.end();
-      return response; 
-    } 
-    else {
+      return response;
+    } else {
       Serial.println("GET failed, code: " + String(http_code));
       retry_count++;
-      http.end(); 
+      http.end();
       delay(5000);
     }
   }
 
-  return response; 
+  return response;  // might be empty string if all retries failed
+}
+
+String queryDB(String scannedID) {
+  return sendHTTPRequest("/average?rfid=" + scannedID);
+}
+
+void intruderNotification() {
+  String response = sendHTTPRequest("/intruder");
+  if (response != "Success") {
+    Serial.println(response);
+  }
 }
 
 // ESP-NOW callback
@@ -201,33 +213,6 @@ void playAudio(const char* path) {
   }
 }
 
-void intruderNotification(){
-  int http_code = -1;
-  int retry_count = 0;
-
-  while (retry_count < 5) {
-    HTTPClient http;
-    String url = "http://" + String(serverIP) + ":5000/intruder";
-    Serial.println("Sending request to: " + url);
-
-    http.begin(url);
-    http_code = http.GET();
-
-    if (http_code > 0) {
-      Serial.println("HTTP Code: " + String(http_code));
-      response = http.getString();
-      Serial.println(response);
-      http.end();
-    } 
-    else {
-      Serial.println("GET failed, code: " + String(http_code));
-      retry_count++;
-      http.end(); 
-      delay(5000);
-    }
-  }
-}
-
 void detectMotion() {
   previousState = currentState;
   currentState = digitalRead(MOTION_PIN);
@@ -237,11 +222,20 @@ void detectMotion() {
     
     // if an intruder, sound alarm
     if (activeSession == false) {
-      playAudio(mp3FilePath);
-      intruderNotification();
-    }
-
-  } 
+      unsigned long now = millis();
+      if (now - textTime >= maxTextDuration) {
+        playAudio(mp3FilePath);
+        intruderNotification();
+        textTime = now;  // update the last text time
+      } 
+      else {
+        unsigned long remaining = maxTextDuration - (now - textTime);
+        Serial.print("Intruder detection rate-limited. ");
+        Serial.print("Seconds remaining: ");
+        Serial.println(remaining / 1000.0, 2);
+      }
+    } 
+  }
   else if (previousState == HIGH && currentState == LOW) {
     Serial.println("Motion ended");
   }
