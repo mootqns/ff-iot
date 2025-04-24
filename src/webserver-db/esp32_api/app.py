@@ -83,10 +83,14 @@ def get_average():
                 if row:
                     average = row[0]
 
+            cursor.execute("SELECT username FROM valid_RFIDs WHERE rfid = %s", (rfid,))
+            name_result = cursor.fetchone()
+            name = name_result[0] if name_result else None
+
             cursor.close()
             conn.close()
 
-            return str(average)
+            return str(average) + ',' + str(name)
         except Exception as e:
             return None
     else:
