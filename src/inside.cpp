@@ -16,11 +16,11 @@ String queryDB(String scannedID);
 void intruderNotification();
 
 // WiFi
-const char* ssid = "";
-const char* password = "";
+const char* ssid = "CPS-Cyber-01";
+const char* password = "unhappy3sandstonedeflector";
 
 // Server IP
-const char* serverIP = ""; 
+const char* serverIP = "35.185.229.173"; 
 
 // I2S bus (amp)
 constexpr int I2S_DOUT = 5;
@@ -34,7 +34,7 @@ constexpr int OLED_RESET = -1;
 constexpr int SCREEN_ADDRESS = 0x3C;
 
 // File path in SPIFFS
-const char* mp3FilePath = "/boing.mp3";
+const char* mp3FilePath = "/output.mp3";
 
 // Motion detector
 constexpr int MOTION_PIN = 13;
@@ -68,10 +68,12 @@ void setup() {
   // Connect to WiFi
   WiFi.mode(WIFI_AP);
   WiFi.begin(ssid, password);
-  Serial.println("\nConnecting to WiFi");
   while(WiFi.status() != WL_CONNECTED){
       delay(100);
   }
+  Serial.println("\nWiFi Connected");
+  Serial.print("Wi-Fi Channel: ");
+  Serial.println(WiFi.channel());
 
   // Initialize ESP-NOW
   if (esp_now_init() != ESP_OK) {
@@ -99,7 +101,7 @@ void setup() {
 
   // Initialize I2S audio
   audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
-  audio.setVolume(10); // Set volume (0–21)
+  audio.setVolume(20); // Set volume (0–21)
 
   // Ensure first text goes through
   textTime = millis() - maxTextDuration;
@@ -111,19 +113,32 @@ void loop() {
 
   if (activeSession) {
     if (dataReceived) {
-      String rawTime = queryDB(bathroomUser);
+      String rawResponse = queryDB(bathroomUser);
       dataReceived = false;
-  
-      float totalSeconds = rawTime.toFloat();
-      int minutes = (int)(totalSeconds / 60);
-      float seconds = fmod(totalSeconds, 60.0);
-  
-      String msg = "User " + bathroomUser + " used: " + String(minutes) + " min " + String(seconds, 2) + " sec";
-  
-      display.clearDisplay();
-      display.setCursor(0, 0);
-      display.print(msg);
-      display.display();
+      
+      // Expecting format: "<time>,<name>"
+      int commaIndex = rawResponse.indexOf(',');
+      
+      if (commaIndex != -1) {
+        String rawTime = rawResponse.substring(0, commaIndex);
+        String userName = rawResponse.substring(commaIndex + 1);
+      
+        float totalSeconds = rawTime.toFloat();
+        int minutes = (int)(totalSeconds / 60);
+        float seconds = fmod(totalSeconds, 60.0);
+      
+        String msg = "User: " + userName + "\nAvg Use Time:\n " + String(minutes) + "m " + String(seconds, 2) + "s";
+
+        display.clearDisplay();
+        display.setCursor(0, 0);
+        display.setTextSize(1);
+        display.setTextColor(SSD1306_WHITE);
+        display.print(msg);
+        display.display();
+      } 
+      else {
+        Serial.println("Invalid response from server: " + rawResponse);
+      }
     }
   }
   else {
@@ -138,6 +153,11 @@ String sendHTTPRequest(String endpoint) {
   int http_code = -1;
   int retry_count = 0;
   String url = "http://" + String(serverIP) + ":5000" + endpoint;
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi is not connected. Cannot send HTTP request.");
+    return response; 
+  }
 
   while (retry_count < 5) {
     HTTPClient http;
@@ -224,7 +244,6 @@ void detectMotion() {
     if (activeSession == false) {
       unsigned long now = millis();
       if (now - textTime >= maxTextDuration) {
-        playAudio(mp3FilePath);
         intruderNotification();
         textTime = now;  // update the last text time
       } 
@@ -234,6 +253,8 @@ void detectMotion() {
         Serial.print("Seconds remaining: ");
         Serial.println(remaining / 1000.0, 2);
       }
+
+      playAudio(mp3FilePath);
     } 
   }
   else if (previousState == HIGH && currentState == LOW) {
