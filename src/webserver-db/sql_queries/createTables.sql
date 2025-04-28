@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS valid_RFIDs (
-    rfid VARCHAR(50) PRIMARY KEY
+    rfid VARCHAR(50) PRIMARY KEY,
+    username VARCHAR(50)
 );
 
 CREATE TABLE IF NOT EXISTS `session` (
