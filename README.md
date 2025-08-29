@@ -64,5 +64,6 @@ We built a security system for our home bathroom:
 
 ---
 
-## 🚨 Demo  
-(Insert demo video or screenshots here)  
+## 🚨 Images 
+![Hardware](docs/Hardware.png)  
+![Diagram](docs/block_diagram.png)
